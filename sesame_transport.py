@@ -1,16 +1,14 @@
-import asyncio
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 from bleak import BleakClient
 
 class SSMTransportHandler:
-    def set_client(self, client):
-        self.client = client
-    def __init__(self, addr, priv_key):
+    def __init__(self, addr, priv_key, response_handler):
         self.addr = addr
         self.priv_key = priv_key
         self.ccm = None
         self.buffer = b''
+        self.response_handler = response_handler
     async def connect(self):
         self.client = BleakClient(self.addr)
         await self.client.connect()
@@ -23,9 +21,9 @@ class SSMTransportHandler:
             print(f"Disconnected from {self.addr}")
         else:
             print("Client is not connected")
-    async def send_encrypted(self, item_code: int, parameter: bytearray):
-        print(f"Sending item code: {item_code}, parameter: {parameter}")
-        encrypted_data = self.ccm.encrypt(item_code.to_bytes(1) + parameter)
+    async def send_encrypted(self, item_code: int, payload: bytearray):
+        print(f"Sending item code: {item_code}, payload: {payload.hex()}")
+        encrypted_data = self.ccm.encrypt(item_code.to_bytes(1) + payload)
         if len(encrypted_data) < 20:
             SEG = 2
             SEG <<= 1
@@ -34,26 +32,25 @@ class SSMTransportHandler:
         else:
             for i in range(0, len(encrypted_data), 19):
                 chunk = encrypted_data[i:i + 19]
-                SEG = 0 if i != len(encrypted_data) // 19 * 19 else 2 # set parsing type https://raw.githubusercontent.com/CANDY-HOUSE/.github/main/profile/uml/uml_output/communication_layer.png
+                SEG = 0 if i != (len(encrypted_data) - 1) // 19 * 19 else 2 # set parsing type https://raw.githubusercontent.com/CANDY-HOUSE/.github/main/profile/uml/uml_output/communication_layer.png
                 SEG <<= 1
                 SEG += 1 if i == 0 else 0 # is_start
-                await self.gatt_write(SEG.to_bytes(1, 'big') + chunk)
-    async def send_plain(self, item_code: int, parameter: bytearray):
-        print(f"Sending plain data: {item_code}, {parameter}")
-        data = item_code.to_bytes(1, 'big') + parameter
+                await self.gatt_write(SEG.to_bytes(1) + chunk)
+    async def send_plain(self, item_code: int, payload: bytearray):
+        print(f"Sending plain data: {item_code}, {payload.hex()}")
+        data = item_code.to_bytes(1) + payload
         if len(data) < 20:
             SEG = 1
             SEG <<= 1
             SEG += 1
-            await self.gatt_write(SEG.to_bytes(1, 'big') + data)
+            await self.gatt_write(SEG.to_bytes(1) + data)
         else:
             for i in range(0, len(data), 19):
                 chunk = data[i:i + 19]
-                SEG = 0 if i != len(data) // 19 * 19 else 1
+                SEG = 0 if i != (len(data) - 1) // 19 * 19 else 1
                 SEG <<= 1
                 SEG += 1 if i == 0 else 0
-                print(f"SEG: {SEG}, i: {i}, chunk: {chunk.hex()}")
-                await self.gatt_write(SEG.to_bytes(1, 'big') + chunk)
+                await self.gatt_write(SEG.to_bytes(1) + chunk)
 
     async def gatt_write(self, data):
         print(f"Writing data: {data.hex()}")
@@ -66,17 +63,8 @@ class SSMTransportHandler:
                 print(f"Decryption failed: {e}")
                 return
         print(f"received packet: {data.hex()}")
-        match data[1]:
-            case 14:
-                print(f"Initial payload: {data[2:6].hex()}")
-                cobj = CMAC.new(self.priv_key, ciphermod=AES)
-                cobj.update(data[2:67])
-                cmac_result = cobj.digest()
-                token = cmac_result[:16]
-                self.ccm = CCMAgent(data[2:6], token=token)
-                await self.send_plain(2, token[:4]) # login
-            case _:
-                print(f"Unhandled item code: {data[1]}, data: {data.hex()}")
+        await self.response_handler(data, is_encrypted)
+
     async def notification_handler(self, _sender, data):
         print(f"recv: {data.hex()}")
         match data[0]:
