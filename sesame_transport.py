@@ -62,35 +62,35 @@ class SSMTransportHandler:
             except Exception as e:
                 print(f"Decryption failed: {e}")
                 return
-        print(f"received packet: {data.hex()}")
+        # print(f"received packet: {data.hex()}")
         await self.response_handler(data, is_encrypted)
 
     async def notification_handler(self, _sender, data):
-        print(f"recv: {data.hex()}")
+        # print(f"recv: {data.hex()}")
         match data[0]:
             case 0:
-                print("Received a middle of a split packet")
+                # print("Received a middle of a split packet")
                 self.buffer += data[1:]
             case 1:
-                print("Received the head of a split packet")
+                # print("Received the head of a split packet")
                 if len(self.buffer) > 0:
                     print(f"W: overwriting unmatured packet")
                 self.buffer = data[1:]
             case 2:
-                print("Received the end of a plain split packet")
+                # print("Received the end of a plain split packet")
                 self.buffer += data[1:]
                 await self.data_handler(self.buffer)
                 self.buffer = b''
             case 3:
-                print("Received a single plain packet")
+                # print("Received a single plain packet")
                 await self.data_handler(data[1:])
             case 4:
-                print("Received the end of an encrypted split packet")
+                # print("Received the end of an encrypted split packet")
                 self.buffer += data[1:]
                 await self.data_handler(self.buffer, is_encrypted=True)
                 self.buffer = b''
             case 5:
-                print("Received a single encrypted packet")
+                # print("Received a single encrypted packet")
                 await self.data_handler(data[1:], is_encrypted=True)
             case _:
                 print(f"Unhandled packet status: {data[0]}")
