@@ -6,31 +6,36 @@ from Crypto.Hash import CMAC
 from sesame_transport import SSMTransportHandler, CCMAgent
 class SesameClient:
     def __init__(self, sesame_addr, priv_key):
-        self.txrx = SSMTransportHandler(sesame_addr, priv_key, self.response_handler)
+        self.txrx = SSMTransportHandler(sesame_addr, self.response_handler)
         self.response_listener: dict = {}
+        self.priv_key = priv_key
     async def connect(self):
         waiter = self.wait_for_response(14)
         await self.txrx.connect()
         initial, _ = await waiter
         await self._login(initial)
 
+    async def disconnect(self):
+        await self.txrx.disconnect()
+
     async def _login(self, data):
-        cobj = CMAC.new(self.txrx.priv_key, ciphermod=AES)
+        cobj = CMAC.new(self.priv_key, ciphermod=AES)
         cobj.update(data[2:])
         cmac_result = cobj.digest()
         token = cmac_result[:16]
         self.txrx.ccm = CCMAgent(data[2:6], token=token)
         await self.send_and_wait(2, token[:4], encrypted=False)
 
+    async def send(self, item_code, payload, encrypted: bool):
+        data = item_code.to_bytes(1) + payload
+        await self.txrx.send(data, encrypted=encrypted)
+
     async def send_and_wait(self, item_code, data, encrypted: bool, response_code: Optional[int] = None):
         waiter = self.wait_for_response(response_code if response_code is not None else item_code)
-        if encrypted:
-            await self.txrx.send_encrypted(item_code, data)
-        else:
-            await self.txrx.send_plain(item_code, data)
+        await self.send(item_code, data, encrypted=encrypted)
         result, metadata = await waiter
         return result, metadata
-    
+
     def wait_for_response(self, item_code: int):
         loop = asyncio.get_running_loop()
         f = loop.create_future()

@@ -1,11 +1,9 @@
 from Crypto.Cipher import AES
-from Crypto.Hash import CMAC
 from bleak import BleakClient
 
 class SSMTransportHandler:
-    def __init__(self, addr, priv_key, response_handler):
+    def __init__(self, addr, response_handler):
         self.addr = addr
-        self.priv_key = priv_key
         self.ccm = None
         self.buffer = b''
         self.response_handler = response_handler
@@ -21,36 +19,22 @@ class SSMTransportHandler:
             print(f"Disconnected from {self.addr}")
         else:
             print("Client is not connected")
-    async def send_encrypted(self, item_code: int, payload: bytearray):
-        print(f"Sending item code: {item_code}, payload: {payload.hex()}")
-        encrypted_data = self.ccm.encrypt(item_code.to_bytes(1) + payload)
-        if len(encrypted_data) < 20:
-            SEG = 2
-            SEG <<= 1
-            SEG += 1
-            await self.gatt_write(SEG.to_bytes(1, 'big') + encrypted_data)
-        else:
-            for i in range(0, len(encrypted_data), 19):
-                chunk = encrypted_data[i:i + 19]
-                SEG = 0 if i != (len(encrypted_data) - 1) // 19 * 19 else 2 # set parsing type https://raw.githubusercontent.com/CANDY-HOUSE/.github/main/profile/uml/uml_output/communication_layer.png
-                SEG <<= 1
-                SEG += 1 if i == 0 else 0 # is_start
-                await self.gatt_write(SEG.to_bytes(1) + chunk)
-    async def send_plain(self, item_code: int, payload: bytearray):
-        print(f"Sending plain data: {item_code}, {payload.hex()}")
-        data = item_code.to_bytes(1) + payload
-        if len(data) < 20:
-            SEG = 1
-            SEG <<= 1
-            SEG += 1
-            await self.gatt_write(SEG.to_bytes(1) + data)
-        else:
-            for i in range(0, len(data), 19):
-                chunk = data[i:i + 19]
-                SEG = 0 if i != (len(data) - 1) // 19 * 19 else 1
-                SEG <<= 1
-                SEG += 1 if i == 0 else 0
-                await self.gatt_write(SEG.to_bytes(1) + chunk)
+
+    async def send(self, data: bytearray, encrypted: bool):
+        if encrypted:
+            data = self.ccm.encrypt(data)
+        for i in range(0, len(data), 19):
+            chunk = data[i:i + 19]
+            if i != (len(data) - 1) // 19 * 19:
+                parsing_type = 0
+            else:
+                if encrypted:
+                    parsing_type = 2
+                else:
+                    parsing_type = 1
+            SEG = parsing_type << 1
+            SEG += 1 if i == 0 else 0
+            await self.gatt_write(SEG.to_bytes(1) + chunk)
 
     async def gatt_write(self, data):
         print(f"Writing data: {data.hex()}")
