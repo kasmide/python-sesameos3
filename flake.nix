@@ -17,6 +17,7 @@
           python3
           python3Packages.pycryptodome
           python3Packages.bleak
+          python3Packages.aioconsole
         ];
       };
     };

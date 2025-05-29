@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+from aioconsole import ainput
 from sesame_transport import SSMTransportHandler
 from sesame_client import SesameClient
 
@@ -12,18 +13,18 @@ async def main():
     client = SesameClient(SSM_ADDR, PRIV_KEY)
     await client.connect()
     while True:
-        match input("command? ").strip().lower():
+        match (await ainput("command? ")).strip().lower():
             case "unlock":
-                str = input("display name? ").encode('utf-8')[:32]
+                str = (await ainput("display name? ")).encode('utf-8')[:32]
                 str_len = len(str).to_bytes(1, "little")
                 await client.send_and_wait(83, str_len + str, encrypted=True)
             case "lock":
-                str = input("display name? ").encode('utf-8')[:32]
+                str = (await ainput("display name? ")).encode('utf-8')[:32]
                 str_len = len(str).to_bytes(1, "little")
                 await client.send_and_wait(82, str_len + str, encrypted=True)
             case "custom":
-                item_code = int(input("item code? "))
-                payload_str = input("payload (hex)? ")
+                item_code = int(await ainput("item code? "))
+                payload_str = await ainput("payload (hex)? ")
                 payload = bytes.fromhex(payload_str)
                 await client.send_and_wait(item_code, payload, encrypted=True)
             case "hist peek":
