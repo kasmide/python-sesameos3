@@ -15,20 +15,18 @@ async def main():
     while True:
         match (await ainput("command? ")).strip().lower():
             case "unlock":
-                str = (await ainput("display name? ")).encode('utf-8')[:32]
-                str_len = len(str).to_bytes(1, "little")
-                await client.send_and_wait(83, str_len + str, encrypted=True)
+                await client.unlock(await ainput("display name? "))
             case "lock":
-                str = (await ainput("display name? ")).encode('utf-8')[:32]
-                str_len = len(str).to_bytes(1, "little")
-                await client.send_and_wait(82, str_len + str, encrypted=True)
+                await client.lock(await ainput("display name? "))
             case "custom":
                 item_code = int(await ainput("item code? "))
                 payload_str = await ainput("payload (hex)? ")
                 payload = bytes.fromhex(payload_str)
-                await client.send_and_wait(item_code, payload, encrypted=True)
+                await client._send_and_wait(item_code, payload, encrypted=True)
             case "hist peek":
-                await client.send_and_wait(4, b'1', encrypted=True)
+                await client._send_and_wait(4, (1).to_bytes(1), encrypted=True)
+            case "hist pop":
+                await client._send_and_wait(4, (0).to_bytes(1), encrypted=True)
             case "q":
                 await client.txrx.disconnect()
                 break
