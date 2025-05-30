@@ -70,14 +70,10 @@ class EventData:
 
 
 T = TypeVar("T")
-EventTypeT = TypeVar("EventTypeT", bound="EventType[T]")
+EventTypeT = TypeVar("EventTypeT", bound="EventType")
 class EventType(ABC, Generic[T]):
     response: T
-    @property
-    @abstractmethod
-    def item_code(self) -> int:
-        """Return the item code for this event type."""
-        pass
+    item_code: int
     @classmethod
     @abstractmethod
     def from_bytes(cls, data: bytes) -> Self:
@@ -119,14 +115,14 @@ class Event:
         def __init__(self):
             self.response = None
         @classmethod
-        def from_bytes(cls, _data):
+        def from_bytes(cls, data):
             return cls()
     class UnlockEvent(EventType[None]):
         item_code = 83
         def __init__(self):
             self.response = None
         @classmethod
-        def from_bytes(cls, _data):
+        def from_bytes(cls, data):
             return cls()
     class OpenSensorAutoLockTimeEvent(EventType[int]):
         item_code = 92
@@ -161,18 +157,18 @@ class SesameClient:
         await self._send_and_wait(2, token[:4], encrypted=False)
 
     async def lock(self, display_name: str):
-        display_name = display_name.encode('utf-8')[:32]
-        display_name_len = len(display_name).to_bytes(1, "little")
+        display_name_bytes = display_name.encode('utf-8')[:32]
+        display_name_len = len(display_name_bytes).to_bytes(1, "little")
         try:
-            await asyncio.wait_for(self._send_and_wait(82, display_name_len + display_name, encrypted=True), timeout=2)
+            await asyncio.wait_for(self._send_and_wait(82, display_name_len + display_name_bytes, encrypted=True), timeout=2)
         except asyncio.TimeoutError:
             raise TimeoutError("Lock command timed out.")
 
     async def unlock(self, display_name: str):
-        display_name = display_name.encode('utf-8')[:32]
-        display_name_len = len(display_name).to_bytes(1, "little")
+        display_name_bytes = display_name.encode('utf-8')[:32]
+        display_name_len = len(display_name_bytes).to_bytes(1, "little")
         try:
-            await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name, encrypted=True), timeout=2)
+            await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name_bytes, encrypted=True), timeout=2)
         except asyncio.TimeoutError:
             raise TimeoutError("Unlock command timed out.")
     def add_listener(self, event_type: Type[EventTypeT], callback: Callable[[EventTypeT, dict], None]):
