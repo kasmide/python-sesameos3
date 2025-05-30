@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 from datetime import datetime
-from typing import Callable, Generic, Optional, Type, TypeVar
+from typing import Callable, Generic, Optional, Self, Type, TypeVar
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
@@ -70,7 +70,7 @@ class EventData:
 
 
 T = TypeVar("T")
-EventTypeT = TypeVar("U", bound="EventType[T]")
+EventTypeT = TypeVar("EventTypeT", bound="EventType[T]")
 class EventType(ABC, Generic[T]):
     response: T
     @property
@@ -80,7 +80,7 @@ class EventType(ABC, Generic[T]):
         pass
     @classmethod
     @abstractmethod
-    def from_bytes(cls: EventTypeT, data: bytes) -> EventTypeT:
+    def from_bytes(cls, data: bytes) -> Self:
         """Create an instance of the event type from raw bytes."""
         pass
 
@@ -90,7 +90,7 @@ class Event:
         def __init__(self, timestamp: datetime):
             self.response = timestamp
         @classmethod
-        def from_bytes(cls, data: bytes):
+        def from_bytes(cls, data):
             unixtime = int.from_bytes(data[2:6], "little")
             return cls(datetime.fromtimestamp(unixtime))
     class InitializeEvent(EventType[bytes]):
@@ -98,42 +98,42 @@ class Event:
         def __init__(self, random_data: bytes):
             self.response = random_data
         @classmethod
-        def from_bytes(cls, data: bytes):
+        def from_bytes(cls, data):
             return cls(data[2:6])
     class MechSettingsEvent(EventType[EventData.MechSettings]):
         item_code = 80
         def __init__(self, mech_settings: EventData.MechSettings):
             self.response = mech_settings
         @classmethod
-        def from_bytes(cls, data: bytes):
+        def from_bytes(cls, data):
             return cls(EventData.MechSettings.from_bytes(data[2:]))
     class MechStatusEvent(EventType[EventData.MechStatus]):
         item_code = 81
         def __init__(self, mech_status: EventData.MechStatus):
             self.response = mech_status
         @classmethod
-        def from_bytes(cls, data: bytes):
+        def from_bytes(cls, data):
             return cls(EventData.MechStatus.from_bytes(data[2:9]))
     class LockEvent(EventType[None]):
         item_code = 82
         def __init__(self):
             self.response = None
         @classmethod
-        def from_bytes(cls, _data: bytes):
+        def from_bytes(cls, _data):
             return cls()
     class UnlockEvent(EventType[None]):
         item_code = 83
         def __init__(self):
             self.response = None
         @classmethod
-        def from_bytes(cls, _data: bytes):
+        def from_bytes(cls, _data):
             return cls()
     class OpenSensorAutoLockTimeEvent(EventType[int]):
         item_code = 92
         def __init__(self, auto_lock_time: int):
             self.response = auto_lock_time
         @classmethod
-        def from_bytes(cls, data: bytes):
+        def from_bytes(cls, data):
             return cls(int.from_bytes(data[2:4], "little"))
 
 class SesameClient:
