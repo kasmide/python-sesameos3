@@ -77,6 +77,8 @@ class SSMTransportHandler:
             if self.ccm is None:
                 raise RuntimeError("CCM agent is not initialized")
             data = self.ccm.decrypt(data)
+        elif self.ccm is not None:
+            return
         # print(f"received packet: {data.hex()}")
         await self.response_handler(data, is_encrypted)
 
