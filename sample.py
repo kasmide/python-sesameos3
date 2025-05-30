@@ -25,9 +25,23 @@ async def main():
                 payload = bytes.fromhex(payload_str)
                 await client._send_and_wait(item_code, payload, encrypted=True)
             case "hist peek":
-                await client._send_and_wait(4, (1).to_bytes(1), encrypted=True)
+                hist = await client.get_history_head()
+                print(f"History head: {hist}")
             case "hist pop":
-                await client._send_and_wait(4, (0).to_bytes(1), encrypted=True)
+                hist = await client.get_history_tail()
+                if hist.response is None:
+                    print("No history available")
+                else:
+                    print(f"id: {hist.response.id}, type: {hist.response.type}, time: {hist.response.timestamp}, ss5: {hist.response.ss5.hex()}")
+            case "hist delete":
+                id = int(await ainput("id to delete? "))
+                await client._send_and_wait(18, id.to_bytes(4, 'little'), encrypted=True)
+            case "autolock":
+                duration = int(await ainput("duration in seconds? "))
+                await client.set_autolock_time(duration)
+            case "version":
+                version = await client.get_version()
+                print(f"Version: {version}")
             case "q":
                 await client.txrx.disconnect()
                 break

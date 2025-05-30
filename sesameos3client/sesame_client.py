@@ -2,12 +2,52 @@ from abc import ABC, abstractmethod
 import asyncio
 from datetime import datetime
 from typing import Callable, Generic, Optional, Self, Type, TypeVar
+from uuid import UUID
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
 from .sesame_transport import SSMTransportHandler, CCMAgent
 
 class EventData:
+    class HistoryData:
+        class HistoryType:
+            NONE = 0
+            BLE_LOCK = 1
+            BLE_UNLOCK = 2
+            TIME_CHANGED = 3
+            AUTOLOCK_UPDATED = 4
+            MECH_SETTING_UPDATED = 5
+            AUTOLOCK = 6
+            MANUAL_LOCKED = 7
+            MANUAL_UNLOCKED = 8
+            MANUAL_ELSE = 9
+            DRIVE_LOCKED = 10
+            DRIVE_UNLOCKED = 11
+            DRIVE_FAILED = 12
+            BLE_ADV_PARAM_UPDATED = 13
+            WM2_LOCK = 14
+            WM2_UNLOCK = 15
+            WEB_LOCK = 16
+            WEB_UNLOCK = 17
+        id: int
+        type: int
+        timestamp: datetime
+        mech_status: 'EventData.MechStatus'
+        ss5: bytes
+        def __init__(self, id, type, timestamp, mech_status, ss5):
+            self.id = id
+            self.type = type # 0 autolock, 2 bluetooth
+            self.timestamp = timestamp
+            self.mech_status = mech_status
+            self.ss5 = ss5
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            id = int.from_bytes(data[1:5], "little")
+            type = data[5]
+            timestamp = datetime.fromtimestamp(int.from_bytes(data[6:10], "little"))
+            mechstatus = EventData.MechStatus.from_bytes(data[10:17])
+            ss5 = data[17:]
+            return cls(id, type, timestamp, mechstatus, ss5)
     class MechStatus:
         battery: int
         target: int
@@ -89,6 +129,16 @@ class Event:
         def from_bytes(cls, data):
             unixtime = int.from_bytes(data[2:6], "little")
             return cls(datetime.fromtimestamp(unixtime))
+    class HistoryEvent(EventType[Optional[EventData.HistoryData]]):
+        item_code = 4
+        def __init__(self, history_data: Optional[EventData.HistoryData]):
+            self.response = history_data
+        @classmethod
+        def from_bytes(cls, data):
+            if data[2] == 0:
+                return cls(EventData.HistoryData.from_bytes(data[2:]))
+            else:
+                return cls(None)
     class InitializeEvent(EventType[bytes]):
         item_code = 14
         def __init__(self, random_data: bytes):
@@ -171,6 +221,32 @@ class SesameClient:
             await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name_bytes, encrypted=True), timeout=2)
         except asyncio.TimeoutError:
             raise TimeoutError("Unlock command timed out.")
+
+    async def set_autolock_time(self, seconds: int):
+        data = seconds.to_bytes(2, "little")
+        await self._send_and_wait(11, data, encrypted=True)
+
+    async def get_version(self) -> str:
+        result, metadata = await self._send_and_wait(5, b'', encrypted=True)
+        return result[3:15].decode('utf-8')
+
+    async def get_history_head(self) -> Optional[Event.HistoryEvent]:
+        result, metadata = await self._send_and_wait(4, b'\x01', encrypted=True)
+        if result[2] == 0:
+            return Event.HistoryEvent.from_bytes(result)
+        return None
+
+    async def get_history_tail(self) -> Event.HistoryEvent:
+        result, metadata = await self._send_and_wait(4, b'\x00', encrypted=True)
+        return Event.HistoryEvent.from_bytes(result)
+
+    async def delete_history(self, history_id: int):
+        data = history_id.to_bytes(4, 'little')
+        result, metadata = await self._send_and_wait(18, data, encrypted=True, response_code=18)
+        if result[2] != 0:
+            raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
+        print(f"History with ID {history_id} deleted successfully.")
+
     def add_listener(self, event_type: Type[EventTypeT], callback: Callable[[EventTypeT, dict], None]):
         item_code = event_type.item_code
         def wrapped_callback(data, metadata):
@@ -223,16 +299,7 @@ class SesameClient:
             case 4:
                 print("history response")
                 if data[2] == 0:
-                    id = int.from_bytes(data[3:7], "little")
-                    type = data[7]
-                    timestamp = int.from_bytes(data[8:12], "little")
-                    mechstatus = data[12:19]
-                    print(f"ID: {id}, Type: {type}, Timestamp: {timestamp}, "
-                              f"MechStatus: {EventData.MechStatus.from_bytes(mechstatus)}")
-                    if len(data) > 19:
-                        ss5_len = data[19]
-                        ss5 = data[20:20 + ss5_len]
-                        print(f"SS5_Len: {ss5_len}, SS5: {ss5.decode("utf-8")}, Left: {data[20 + ss5_len:].hex()}")
+                    EventData.HistoryData.from_bytes(data[2:])
                 elif data[2] == 5:
                     print("history is empty")
             case 5:
