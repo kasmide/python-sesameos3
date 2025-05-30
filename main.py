@@ -3,7 +3,7 @@ import base64
 import json
 from aioconsole import ainput
 from sesame_transport import SSMTransportHandler
-from sesame_client import SesameClient
+from sesame_client import SesameClient, Event
 
 async def main():
     with open("config.json", "r") as f:
@@ -12,6 +12,8 @@ async def main():
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
     await client.connect()
+    client.add_listener(Event.MechStatusEvent, lambda e, _: print(f"Mech status received: battery {e.response.battery} mV, is_locked: {e.response.lock_range}, stop: {e.response.stop}"))
+
     while True:
         match (await ainput("command? ")).strip().lower():
             case "unlock":

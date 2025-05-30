@@ -1,11 +1,24 @@
+from abc import ABC, abstractmethod
 import asyncio
-from typing import Optional
+from datetime import datetime
+from typing import Callable, Generic, Optional, Type, TypeVar
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
 from sesame_transport import SSMTransportHandler, CCMAgent
-class SesameClient:
+
+class EventData:
     class MechStatus:
+        battery: int
+        target: int
+        position: int
+        clutch_failed: bool
+        lock_range: bool
+        unlock_range: bool
+        critical: bool
+        stop: bool
+        low_battery: bool
+        clockwise: bool
         def __init__(self, battery, target, position, clutch_failed, lock_range,
                      unlock_range, critical, stop, low_battery, clockwise):
             self.battery = battery
@@ -25,19 +38,22 @@ class SesameClient:
             target = target if target < 2 ** 15 else target - 2 ** 16
             position = int.from_bytes(data[4:6], "little")
             position = position if position < 2 ** 15 else position - 2 ** 16
-            is_clutch_failed = (data[6] >> 0) & 1
-            is_lock_range = (data[6] >> 1) & 1
-            is_unlock_range = (data[6] >> 2) & 1
-            is_critical = (data[6] >> 3) & 1
-            is_stop = (data[6] >> 4) & 1
-            is_low_battery = (data[6] >> 5) & 1
-            is_clockwise = (data[6] >> 6) & 1
+            is_clutch_failed = (data[6] >> 0) & 1 == 1
+            is_lock_range = (data[6] >> 1) & 1 == 1
+            is_unlock_range = (data[6] >> 2) & 1 == 1
+            is_critical = (data[6] >> 3) & 1 == 1
+            is_stop = (data[6] >> 4) & 1 == 1
+            is_low_battery = (data[6] >> 5) & 1 == 1
+            is_clockwise = (data[6] >> 6) & 1 == 1
             print(f"Battery: {battery}, Target: {target}, Position: {position}, is_clutch_failed: {is_clutch_failed}, "
                   f"is_lock_range: {is_lock_range}, is_unlock_range: {is_unlock_range}, is_critical: {is_critical}, "
                   f"is_stop: {is_stop}, is_low_battery: {is_low_battery}, is_clockwise: {is_clockwise}")
             return cls(battery, target, position, is_clutch_failed, is_lock_range,
                        is_unlock_range, is_critical, is_stop, is_low_battery, is_clockwise)
     class MechSettings:
+        lock: int
+        unlock: int
+        auto_lock_seconds: int
         def __init__(self, lock, unlock, auto_lock_seconds):
             self.lock = lock
             self.unlock = unlock
@@ -52,6 +68,75 @@ class SesameClient:
             print(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
             return cls(lock, unlock, auto_lock_seconds)
 
+
+T = TypeVar("T")
+EventTypeT = TypeVar("U", bound="EventType[T]")
+class EventType(ABC, Generic[T]):
+    response: T
+    @property
+    @abstractmethod
+    def item_code(self) -> int:
+        """Return the item code for this event type."""
+        pass
+    @classmethod
+    @abstractmethod
+    def from_bytes(cls: EventTypeT, data: bytes) -> EventTypeT:
+        """Create an instance of the event type from raw bytes."""
+        pass
+
+class Event:
+    class LoginEvent(EventType[datetime]):
+        item_code = 2
+        def __init__(self, timestamp: datetime):
+            self.response = timestamp
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            unixtime = int.from_bytes(data[2:6], "little")
+            return cls(datetime.fromtimestamp(unixtime))
+    class InitializeEvent(EventType[bytes]):
+        item_code = 14
+        def __init__(self, random_data: bytes):
+            self.response = random_data
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            return cls(data[2:6])
+    class MechSettingsEvent(EventType[EventData.MechSettings]):
+        item_code = 80
+        def __init__(self, mech_settings: EventData.MechSettings):
+            self.response = mech_settings
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            return cls(EventData.MechSettings.from_bytes(data[2:]))
+    class MechStatusEvent(EventType[EventData.MechStatus]):
+        item_code = 81
+        def __init__(self, mech_status: EventData.MechStatus):
+            self.response = mech_status
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            return cls(EventData.MechStatus.from_bytes(data[2:9]))
+    class LockEvent(EventType[None]):
+        item_code = 82
+        def __init__(self):
+            self.response = None
+        @classmethod
+        def from_bytes(cls, _data: bytes):
+            return cls()
+    class UnlockEvent(EventType[None]):
+        item_code = 83
+        def __init__(self):
+            self.response = None
+        @classmethod
+        def from_bytes(cls, _data: bytes):
+            return cls()
+    class OpenSensorAutoLockTimeEvent(EventType[int]):
+        item_code = 92
+        def __init__(self, auto_lock_time: int):
+            self.response = auto_lock_time
+        @classmethod
+        def from_bytes(cls, data: bytes):
+            return cls(int.from_bytes(data[2:4], "little"))
+
+class SesameClient:
     def __init__(self, sesame_addr, priv_key):
         self.txrx = SSMTransportHandler(sesame_addr, self._response_handler)
         self.response_listener: dict = {}
@@ -90,6 +175,12 @@ class SesameClient:
             await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name, encrypted=True), timeout=2)
         except asyncio.TimeoutError:
             raise TimeoutError("Unlock command timed out.")
+    def add_listener(self, event_type: Type[EventTypeT], callback: Callable[[EventTypeT, dict], None]):
+        item_code = event_type.item_code
+        def wrapped_callback(data, metadata):
+            event = event_type.from_bytes(data)
+            callback(event, metadata)
+        self._add_listener(item_code, wrapped_callback)
 
     async def _send(self, item_code, payload, encrypted: bool):
         data = item_code.to_bytes(1) + payload
@@ -106,15 +197,15 @@ class SesameClient:
         f = loop.create_future()
         def callback(result, metadata):
             loop.call_soon_threadsafe(f.set_result, (result, metadata))
-        self.add_listener(item_code, callback, oneoff=True)
+        self._add_listener(item_code, callback, oneoff=True)
         return f
 
-    def add_listener(self, item_code, callback, oneoff=False):
+    def _add_listener(self, item_code, callback, oneoff=False):
         if item_code not in self.response_listener:
             self.response_listener[item_code] = []
         self.response_listener[item_code].append((callback, oneoff))
     
-    def remove_listener(self, item_code, callback):
+    def _remove_listener(self, item_code, callback):
         if item_code in self.response_listener and callback in self.response_listener[item_code]:
             for entry in self.response_listener[item_code]:
                 if entry[0] == callback:
@@ -141,7 +232,7 @@ class SesameClient:
                     timestamp = int.from_bytes(data[8:12], "little")
                     mechstatus = data[12:19]
                     print(f"ID: {id}, Type: {type}, Timestamp: {timestamp}, "
-                              f"MechStatus: {self.MechStatus.from_bytes(mechstatus)}")
+                              f"MechStatus: {EventData.MechStatus.from_bytes(mechstatus)}")
                     if len(data) > 19:
                         ss5_len = data[19]
                         ss5 = data[20:20 + ss5_len]
@@ -159,12 +250,12 @@ class SesameClient:
             case 80:
                 print("mechsettings")
                 if data[0] == 8:
-                    self.mech_settings = self.MechSettings.from_bytes(data[2:])
+                    self.mech_settings = EventData.MechSettings.from_bytes(data[2:])
                 else:
                     print(f"Unknown mechsettings data type but at least we received {data.hex()}")
             case 81:
                 print("mechstatus")
-                self.mech_status = self.MechStatus.from_bytes(data[2:9])
+                self.mech_status = EventData.MechStatus.from_bytes(data[2:9])
             case 82:
                 print("lock response")
                 if data[2] == 0:
