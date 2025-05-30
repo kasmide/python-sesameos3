@@ -5,7 +5,7 @@ from typing import Callable, Generic, Optional, Self, Type, TypeVar
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
-from sesame_transport import SSMTransportHandler, CCMAgent
+from .sesame_transport import SSMTransportHandler, CCMAgent
 
 class EventData:
     class MechStatus:
