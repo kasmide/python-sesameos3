@@ -2,7 +2,7 @@ import asyncio
 import base64
 import json
 from aioconsole import ainput
-from sesameos3 import SesameClient, Event
+from sesameos3client import SesameClient, Event
 
 async def main():
     with open("config.json", "r") as f:
