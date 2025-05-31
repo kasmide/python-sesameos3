@@ -1,7 +1,8 @@
 from abc import ABC, abstractmethod
 import asyncio
+import inspect
 from datetime import datetime
-from typing import Callable, Generic, Optional, Self, Type, TypeVar
+from typing import Callable, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
 from uuid import UUID
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
@@ -251,11 +252,14 @@ class SesameClient:
             raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
         print(f"History with ID {history_id} deleted successfully.")
 
-    def add_listener(self, event_type: Type[EventTypeT], callback: Callable[[EventTypeT, dict], None]):
+    def add_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
         item_code = event_type.item_code
-        def wrapped_callback(data, metadata):
+        async def wrapped_callback(data, metadata):
             event = event_type.from_bytes(data)
-            callback(event, metadata)
+            if inspect.iscoroutinefunction(callback):
+                await callback(event, metadata)
+            else:
+                callback(event, metadata)
         self._add_listener(item_code, wrapped_callback)
 
     async def _send(self, item_code, payload, encrypted: bool):
@@ -292,7 +296,11 @@ class SesameClient:
         if data[1] in self.response_listener:
             for entry in self.response_listener[data[1]]:
                 callback, is_oneoff = entry
-                callback(data, metadata={is_encrypted: is_encrypted})
+                if inspect.iscoroutinefunction(callback):
+                    await callback(data, metadata={'is_encrypted': is_encrypted})
+                else:
+                    callback(data, metadata={'is_encrypted': is_encrypted})
+                    
                 if is_oneoff:
                     self.response_listener[data[1]].remove(entry)
         match data[1]:
