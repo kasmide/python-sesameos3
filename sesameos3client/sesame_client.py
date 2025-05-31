@@ -189,6 +189,10 @@ class SesameClient:
         self.priv_key = priv_key
         self.mech_status = None
         self.mech_settings = None
+
+    def __del__(self):
+        if self.txrx.client.is_connected:
+            asyncio.run(self.txrx.disconnect())
     async def connect(self):
         waiter = self._wait_for_response(14)
         await self.txrx.connect()
@@ -210,7 +214,7 @@ class SesameClient:
         display_name_bytes = display_name.encode('utf-8')[:32]
         display_name_len = len(display_name_bytes).to_bytes(1, "little")
         try:
-            await asyncio.wait_for(self._send_and_wait(82, display_name_len + display_name_bytes, encrypted=True), timeout=2)
+            await asyncio.wait_for(self._send_and_wait(82, display_name_len + display_name_bytes, encrypted=True), timeout=5)
         except asyncio.TimeoutError:
             raise TimeoutError("Lock command timed out.")
 
@@ -218,31 +222,31 @@ class SesameClient:
         display_name_bytes = display_name.encode('utf-8')[:32]
         display_name_len = len(display_name_bytes).to_bytes(1, "little")
         try:
-            await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name_bytes, encrypted=True), timeout=2)
+            await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name_bytes, encrypted=True), timeout=5)
         except asyncio.TimeoutError:
             raise TimeoutError("Unlock command timed out.")
 
     async def set_autolock_time(self, seconds: int):
         data = seconds.to_bytes(2, "little")
-        await self._send_and_wait(11, data, encrypted=True)
+        await asyncio.wait_for(self._send_and_wait(11, data, encrypted=True), timeout=5)
 
     async def get_version(self) -> str:
-        result, metadata = await self._send_and_wait(5, b'', encrypted=True)
+        result, metadata = await asyncio.wait_for(self._send_and_wait(5, b'', encrypted=True), timeout=5)
         return result[3:15].decode('utf-8')
 
     async def get_history_head(self) -> Optional[Event.HistoryEvent]:
-        result, metadata = await self._send_and_wait(4, b'\x01', encrypted=True)
+        result, metadata = await asyncio.wait_for(self._send_and_wait(4, b'\x01', encrypted=True), timeout=5)
         if result[2] == 0:
             return Event.HistoryEvent.from_bytes(result)
         return None
 
     async def get_history_tail(self) -> Event.HistoryEvent:
-        result, metadata = await self._send_and_wait(4, b'\x00', encrypted=True)
+        result, metadata = await asyncio.wait_for(self._send_and_wait(4, b'\x00', encrypted=True), timeout=5)
         return Event.HistoryEvent.from_bytes(result)
 
     async def delete_history(self, history_id: int):
         data = history_id.to_bytes(4, 'little')
-        result, metadata = await self._send_and_wait(18, data, encrypted=True, response_code=18)
+        result, metadata = await asyncio.wait_for(self._send_and_wait(18, data, encrypted=True, response_code=18), timeout=5)
         if result[2] != 0:
             raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
         print(f"History with ID {history_id} deleted successfully.")
