@@ -211,6 +211,12 @@ class SesameClient:
         self.txrx.ccm = CCMAgent(data[2:6], token=token)
         await self._send_and_wait(2, token[:4], encrypted=False)
 
+    async def wait_for(self, event_type: Type[EventTypeT], timeout: int = 5) -> EventTypeT:
+        item_code = event_type.item_code
+        waiter = self._wait_for_response(item_code)
+        result = await asyncio.wait_for(waiter, timeout)
+        return event_type.from_bytes(result[0])
+
     async def lock(self, display_name: str):
         display_name_bytes = display_name.encode('utf-8')[:32]
         display_name_len = len(display_name_bytes).to_bytes(1, "little")
