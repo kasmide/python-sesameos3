@@ -296,10 +296,13 @@ class SesameClient:
     async def _response_handler(self, data, is_encrypted=False):
         print(f"type: {data[0]}, item_code: {data[1]}, data: {data[2:].hex()}")
         if data[1] in self.response_listener:
+            deserialize_result = None
             for entry in self.response_listener[data[1]]:
                 callback, is_oneoff, deserialize = entry
                 if deserialize is not None:
-                    result = deserialize.from_bytes(data)
+                    if deserialize_result is not None:
+                        deserialize_result = deserialize.from_bytes(data)
+                    result = deserialize_result
                 else:
                     result = data
                 if inspect.iscoroutinefunction(callback):
