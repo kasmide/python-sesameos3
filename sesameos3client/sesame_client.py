@@ -241,11 +241,9 @@ class SesameClient:
         result, metadata = await asyncio.wait_for(self._send_and_wait(5, b'', encrypted=True), timeout=5)
         return result[3:15].decode('utf-8')
 
-    async def get_history_head(self) -> Optional[Event.HistoryEvent]:
+    async def get_history_head(self) -> Event.HistoryEvent:
         result, metadata = await asyncio.wait_for(self._send_and_wait(4, b'\x01', encrypted=True), timeout=5)
-        if result[2] == 0:
-            return Event.HistoryEvent.from_bytes(result)
-        return None
+        return Event.HistoryEvent.from_bytes(result)
 
     async def get_history_tail(self) -> Event.HistoryEvent:
         result, metadata = await asyncio.wait_for(self._send_and_wait(4, b'\x00', encrypted=True), timeout=5)
@@ -300,7 +298,7 @@ class SesameClient:
             for entry in self.response_listener[data[1]]:
                 callback, is_oneoff, deserialize = entry
                 if deserialize is not None:
-                    if deserialize_result is not None:
+                    if deserialize_result is None:
                         deserialize_result = deserialize.from_bytes(data)
                     result = deserialize_result
                 else:

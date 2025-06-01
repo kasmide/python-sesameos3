@@ -11,7 +11,7 @@ async def main():
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
     await client.connect()
-    client.add_listener(Event.MechStatusEvent, lambda e, _: print(f"Mech status received: battery {e.response.battery} mV, is_locked: {e.response.lock_range}, stop: {e.response.stop}"))
+    client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: battery {e.response.battery} mV, is_locked: {e.response.lock_range}, stop: {e.response.stop}"))
 
     while True:
         match (await ainput("command? ")).strip().lower():
@@ -24,15 +24,16 @@ async def main():
                 payload_str = await ainput("payload (hex)? ")
                 payload = bytes.fromhex(payload_str)
                 await client._send_and_wait(item_code, payload, encrypted=True)
-            case "hist peek":
+            case "hist head":
                 hist = await client.get_history_head()
-                print(f"History head: {hist}")
-            case "hist pop":
-                hist = await client.get_history_tail()
                 if hist.response is None:
                     print("No history available")
                 else:
                     print(f"id: {hist.response.id}, type: {hist.response.type}, time: {hist.response.timestamp}, ss5: {hist.response.ss5.hex()}")
+            case "hist tail":
+                hist = await client.get_history_tail()
+                assert hist.response is not None
+                print(f"id: {hist.response.id}, type: {hist.response.type}, time: {hist.response.timestamp}, ss5: {hist.response.ss5.hex()}")
             case "hist delete":
                 id = int(await ainput("id to delete? "))
                 await client._send_and_wait(18, id.to_bytes(4, 'little'), encrypted=True)
