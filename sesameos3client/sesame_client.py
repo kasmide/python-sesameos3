@@ -259,14 +259,10 @@ class SesameClient:
         print(f"History with ID {history_id} deleted successfully.")
 
     def add_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
-        item_code = event_type.item_code
-        async def wrapped_callback(data, metadata):
-            event = event_type.from_bytes(data)
-            if inspect.iscoroutinefunction(callback):
-                await callback(event, metadata)
-            else:
-                callback(event, metadata)
-        self._add_listener(item_code, wrapped_callback)
+        self._add_listener(event_type.item_code, callback, deserialize=event_type)
+
+    def remove_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
+        self._remove_listener(event_type.item_code, callback)
 
     async def _send(self, item_code, payload, encrypted: bool):
         data = item_code.to_bytes(1) + payload
@@ -286,10 +282,10 @@ class SesameClient:
         self._add_listener(item_code, callback, oneoff=True)
         return f
 
-    def _add_listener(self, item_code, callback, oneoff=False):
+    def _add_listener(self, item_code, callback, oneoff=False, deserialize=None):
         if item_code not in self.response_listener:
             self.response_listener[item_code] = []
-        self.response_listener[item_code].append((callback, oneoff))
+        self.response_listener[item_code].append((callback, oneoff, deserialize))
     
     def _remove_listener(self, item_code, callback):
         if item_code in self.response_listener and callback in self.response_listener[item_code]:
@@ -301,11 +297,15 @@ class SesameClient:
         print(f"type: {data[0]}, item_code: {data[1]}, data: {data[2:].hex()}")
         if data[1] in self.response_listener:
             for entry in self.response_listener[data[1]]:
-                callback, is_oneoff = entry
-                if inspect.iscoroutinefunction(callback):
-                    await callback(data, metadata={'is_encrypted': is_encrypted})
+                callback, is_oneoff, deserialize = entry
+                if deserialize is not None:
+                    result = deserialize.from_bytes(data)
                 else:
-                    callback(data, metadata={'is_encrypted': is_encrypted})
+                    result = data
+                if inspect.iscoroutinefunction(callback):
+                    await callback(result, metadata={'is_encrypted': is_encrypted})
+                else:
+                    callback(result, metadata={'is_encrypted': is_encrypted})
                     
                 if is_oneoff:
                     self.response_listener[data[1]].remove(entry)
