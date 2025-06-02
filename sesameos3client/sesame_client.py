@@ -245,7 +245,6 @@ class SesameClient:
 
     async def set_mech_settings(self, config: EventData.MechSettings):
         await asyncio.wait_for(self._send_and_wait(80, config.to_bytes(), encrypted=True), timeout=5)
-        self.mech_settings = config
 
     async def get_version(self) -> str:
         result, metadata = await asyncio.wait_for(self._send_and_wait(5, b'', encrypted=True), timeout=5)
