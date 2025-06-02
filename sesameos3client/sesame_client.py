@@ -109,6 +109,12 @@ class EventData:
             print(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
             return cls(lock, unlock, auto_lock_seconds)
 
+        def to_bytes(self):
+            lock_bytes = self.lock.to_bytes(2, "little", signed=True)
+            unlock_bytes = self.unlock.to_bytes(2, "little", signed=True)
+            auto_lock_seconds_bytes = self.auto_lock_seconds.to_bytes(2, "little")
+            return lock_bytes + unlock_bytes + auto_lock_seconds_bytes
+
 
 T = TypeVar("T")
 EventTypeT = TypeVar("EventTypeT", bound="EventType")
@@ -237,6 +243,10 @@ class SesameClient:
         data = seconds.to_bytes(2, "little")
         await asyncio.wait_for(self._send_and_wait(11, data, encrypted=True), timeout=5)
 
+    async def set_mech_settings(self, config: EventData.MechSettings):
+        await asyncio.wait_for(self._send_and_wait(80, config.to_bytes(), encrypted=True), timeout=5)
+        self.mech_settings = config
+
     async def get_version(self) -> str:
         result, metadata = await asyncio.wait_for(self._send_and_wait(5, b'', encrypted=True), timeout=5)
         return result[3:15].decode('utf-8')
@@ -333,8 +343,8 @@ class SesameClient:
                 print("mechsettings")
                 if data[0] == 8:
                     self.mech_settings = EventData.MechSettings.from_bytes(data[2:])
-                else:
-                    print(f"Unknown mechsettings data type but at least we received {data.hex()}")
+                elif data[0] == 7:
+                    print("mechsettings set successfully")
             case 81:
                 print("mechstatus")
                 self.mech_status = EventData.MechStatus.from_bytes(data[2:9])
