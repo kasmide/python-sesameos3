@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import asyncio
 import inspect
+import logging
 from datetime import datetime
 from typing import Callable, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
 from uuid import UUID
@@ -8,6 +9,8 @@ from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
 from .sesame_transport import SSMTransportHandler, CCMAgent
+
+logger = logging.getLogger(__name__)
 
 class EventData:
     class HistoryData:
@@ -86,7 +89,7 @@ class EventData:
             is_stop = (data[6] >> 4) & 1 == 1
             is_low_battery = (data[6] >> 5) & 1 == 1
             is_clockwise = (data[6] >> 6) & 1 == 1
-            print(f"Battery: {battery}, Target: {target}, Position: {position}, is_clutch_failed: {is_clutch_failed}, "
+            logger.debug(f"Battery: {battery}, Target: {target}, Position: {position}, is_clutch_failed: {is_clutch_failed}, "
                   f"is_lock_range: {is_lock_range}, is_unlock_range: {is_unlock_range}, is_critical: {is_critical}, "
                   f"is_stop: {is_stop}, is_low_battery: {is_low_battery}, is_clockwise: {is_clockwise}")
             return cls(battery, target, position, is_clutch_failed, is_lock_range,
@@ -106,7 +109,7 @@ class EventData:
             unlock = int.from_bytes(data[2:4], "little")
             unlock = unlock if unlock < 2 ** 15 else unlock - 2 ** 16
             auto_lock_seconds = int.from_bytes(data[4:6], "little")
-            print(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
+            logger.debug(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
             return cls(lock, unlock, auto_lock_seconds)
 
         def to_bytes(self):
@@ -263,7 +266,7 @@ class SesameClient:
         result, metadata = await asyncio.wait_for(self._send_and_wait(18, data, encrypted=True, response_code=18), timeout=5)
         if result[2] != 0:
             raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
-        print(f"History with ID {history_id} deleted successfully.")
+        logger.info(f"History with ID {history_id} deleted successfully.")
 
     def add_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
         self._add_listener(event_type.item_code, callback, deserialize=event_type)
@@ -301,7 +304,7 @@ class SesameClient:
                     self.response_listener[item_code].remove(entry)
 
     async def _response_handler(self, data, is_encrypted=False):
-        print(f"type: {data[0]}, item_code: {data[1]}, data: {data[2:].hex()}")
+        logger.debug(f"type: {data[0]}, item_code: {data[1]}, data: {data[2:].hex()}")
         if data[1] in self.response_listener:
             deserialize_result = None
             for entry in self.response_listener[data[1]]:
@@ -321,47 +324,47 @@ class SesameClient:
                     self.response_listener[data[1]].remove(entry)
         match data[1]:
             case 2:
-                print("login response")
+                logger.debug("login response")
                 timestamp = data[3:7]
-                print(f"Timestamp: {int.from_bytes(timestamp, "little")}")
+                logger.debug(f"Timestamp: {int.from_bytes(timestamp, 'little')}")
             case 4:
-                print("history response")
+                logger.debug("history response")
                 if data[2] == 0:
                     EventData.HistoryData.from_bytes(data[2:])
                 elif data[2] == 5:
-                    print("history is empty")
+                    logger.debug("history is empty")
             case 5:
-                print("version details")
+                logger.debug("version details")
                 version = data[3:15]
-                print(f"Version: {version}")
+                logger.debug(f"Version: {version}")
             case 14:
-                print("initial response")
+                logger.debug("initial response")
                 random_code = data[2:6]
-                print(f"Random Code: {random_code.hex()}")
+                logger.debug(f"Random Code: {random_code.hex()}")
             case 80:
-                print("mechsettings")
+                logger.debug("mechsettings")
                 if data[0] == 8:
                     self.mech_settings = EventData.MechSettings.from_bytes(data[2:])
                 elif data[0] == 7:
-                    print("mechsettings set successfully")
+                    logger.info("mechsettings set successfully")
             case 81:
-                print("mechstatus")
+                logger.debug("mechstatus")
                 self.mech_status = EventData.MechStatus.from_bytes(data[2:9])
             case 82:
-                print("lock response")
+                logger.debug("lock response")
                 if data[2] == 0:
-                    print("Lock successful")
+                    logger.info("Lock successful")
                 else:
-                    print(f"Unknown response: {data[2]}")
+                    logger.warning(f"Unknown response: {data[2]}")
             case 83:
-                print("unlock response")
+                logger.debug("unlock response")
                 if data[2] == 0:
-                    print("Unlock successful")
+                    logger.info("Unlock successful")
                 else:
-                    print(f"Unknown response: {data[2]}")
+                    logger.warning(f"Unknown response: {data[2]}")
             case 92:
-                print("OpenSensor autolock time")
+                logger.debug("OpenSensor autolock time")
                 time = int.from_bytes(data[2:4], "little")
-                print(f"Auto lock time: {time}")
+                logger.debug(f"Auto lock time: {time}")
             case _:
-                print(f"Unhandled response item code: {data[1]}")
+                logger.warning(f"Unhandled response item code: {data[1]}")

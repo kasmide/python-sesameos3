@@ -1,6 +1,9 @@
 from typing import Optional
 from Crypto.Cipher import AES
 from bleak import BleakClient
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CCMAgent:
     def __init__(self, random_code, token):
@@ -41,15 +44,15 @@ class SSMTransportHandler:
     async def connect(self):
         self.client = BleakClient(self.addr, timeout = 30)
         await self.client.connect()
-        print(f"Connected to {self.addr}")
+        logger.info(f"Connected to {self.addr}")
         await self.client.start_notify("16860003-a5ae-9856-b6d3-dbb4c676993e", self.notification_handler)
     async def disconnect(self):
         if self.client.is_connected:
             await self.client.stop_notify("16860003-a5ae-9856-b6d3-dbb4c676993e")
             await self.client.disconnect()
-            print(f"Disconnected from {self.addr}")
+            logger.info(f"Disconnected from {self.addr}")
         else:
-            print("Client is not connected")
+            logger.warning("Client is not connected")
 
     async def send(self, data: bytes, encrypted: bool):
         if encrypted:
@@ -70,7 +73,7 @@ class SSMTransportHandler:
             await self.gatt_write(SEG.to_bytes(1) + chunk)
 
     async def gatt_write(self, data):
-        print(f"Writing data: {data.hex()}")
+        logger.debug(f"Writing data: {data.hex()}")
         await self.client.write_gatt_char("16860002-a5ae-9856-b6d3-dbb4c676993e", data)
     async def data_handler(self, data, is_encrypted=False):
         if is_encrypted:
@@ -79,36 +82,28 @@ class SSMTransportHandler:
             data = self.ccm.decrypt(data)
         elif self.ccm is not None:
             return
-        # print(f"received packet: {data.hex()}")
         await self.response_handler(data, is_encrypted)
 
     async def notification_handler(self, _sender, data):
-        # print(f"recv: {data.hex()}")
         match data[0]:
             case 0:
-                # print("Received a middle of a split packet")
                 self.buffer += data[1:]
             case 1:
-                # print("Received the head of a split packet")
                 if len(self.buffer) > 0:
-                    print(f"W: overwriting unmatured packet")
+                    logger.warning(f"Overwriting incomplete packet")
                 self.buffer = data[1:]
             case 2:
-                # print("Received the end of a plain split packet")
                 self.buffer += data[1:]
                 await self.data_handler(self.buffer)
                 self.buffer = b''
             case 3:
-                # print("Received a single plain packet")
                 await self.data_handler(data[1:])
             case 4:
-                # print("Received the end of an encrypted split packet")
                 self.buffer += data[1:]
                 await self.data_handler(self.buffer, is_encrypted=True)
                 self.buffer = b''
             case 5:
-                # print("Received a single encrypted packet")
                 await self.data_handler(data[1:], is_encrypted=True)
             case _:
-                print(f"Unhandled packet status: {data[0]}")
-                print(f"Data: {data.hex()}")
+                logger.warning(f"Unhandled packet status: {data[0]}")
+                logger.warning(f"Data: {data.hex()}")

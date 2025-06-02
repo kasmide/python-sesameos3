@@ -1,17 +1,27 @@
 import asyncio
 import base64
 import json
+import logging
+import os
 from aioconsole import ainput
-from sesameos3client import SesameClient, Event
+from sesameos3client import EventData, SesameClient, Event
 
 async def main():
+    log_level = os.getenv('LOG_LEVEL', 'WARNING').upper()
+
+    logging.basicConfig(
+        level=getattr(logging, log_level, logging.WARNING),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
     with open("config.json", "r") as f:
         config = json.load(f)
         SSM_ADDR = config["sesame_addr"]
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
+    client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {vars(e.response).items()}"))
     await client.connect()
-    client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: battery {e.response.battery} mV, is_locked: {e.response.lock_range}, stop: {e.response.stop}"))
+    print(f"Connected to {SSM_ADDR}")
 
     while True:
         match (await ainput("command? ")).strip().lower():
@@ -43,6 +53,19 @@ async def main():
             case "version":
                 version = await client.get_version()
                 print(f"Version: {version}")
+            case "mechsettings":
+                settings = client.mech_settings
+                assert settings is not None
+                print(f"Lock: {settings.lock}, Unlock: {settings.unlock}, Auto Lock Seconds: {settings.auto_lock_seconds}")
+                lock = int(await ainput("Lock pos? "))
+                unlock = int(await ainput("Unlock pos? "))
+                auto_lock_seconds = int(await ainput("Auto lock seconds? "))
+                await client.set_mech_settings(EventData.MechSettings(
+                    lock=lock,
+                    unlock=unlock,
+                    auto_lock_seconds=auto_lock_seconds
+                ))
+
             case "q":
                 await client.txrx.disconnect()
                 break
