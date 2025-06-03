@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 import asyncio
 import inspect
 import logging
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
+from typing import Callable, ClassVar, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
 from uuid import UUID
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
@@ -13,6 +14,7 @@ from .sesame_transport import SSMTransportHandler, CCMAgent
 logger = logging.getLogger(__name__)
 
 class EventData:
+    @dataclass
     class HistoryData:
         class HistoryType:
             NONE = 0
@@ -38,12 +40,7 @@ class EventData:
         timestamp: datetime
         mech_status: 'EventData.MechStatus'
         ss5: bytes
-        def __init__(self, id, type, timestamp, mech_status, ss5):
-            self.id = id
-            self.type = type # 0 autolock, 2 bluetooth
-            self.timestamp = timestamp
-            self.mech_status = mech_status
-            self.ss5 = ss5
+        
         @classmethod
         def from_bytes(cls, data: bytes):
             id = int.from_bytes(data[1:5], "little")
@@ -52,6 +49,7 @@ class EventData:
             mechstatus = EventData.MechStatus.from_bytes(data[10:17])
             ss5 = data[17:]
             return cls(id, type, timestamp, mechstatus, ss5)
+    @dataclass
     class MechStatus:
         battery: int
         target: int
@@ -63,18 +61,7 @@ class EventData:
         stop: bool
         low_battery: bool
         clockwise: bool
-        def __init__(self, battery, target, position, clutch_failed, lock_range,
-                     unlock_range, critical, stop, low_battery, clockwise):
-            self.battery = battery
-            self.target = target
-            self.position = position
-            self.clutch_failed = clutch_failed
-            self.lock_range = lock_range
-            self.unlock_range = unlock_range
-            self.critical = critical
-            self.stop = stop
-            self.low_battery = low_battery
-            self.clockwise = clockwise
+        
         @classmethod
         def from_bytes(cls, data: bytes):
             battery = int.from_bytes(data[0:2], "little")
@@ -94,14 +81,12 @@ class EventData:
                   f"is_stop: {is_stop}, is_low_battery: {is_low_battery}, is_clockwise: {is_clockwise}")
             return cls(battery, target, position, is_clutch_failed, is_lock_range,
                        is_unlock_range, is_critical, is_stop, is_low_battery, is_clockwise)
+    @dataclass
     class MechSettings:
         lock: int
         unlock: int
         auto_lock_seconds: int
-        def __init__(self, lock, unlock, auto_lock_seconds):
-            self.lock = lock
-            self.unlock = unlock
-            self.auto_lock_seconds = auto_lock_seconds
+        
         @classmethod
         def from_bytes(cls, data: bytes):
             lock = int.from_bytes(data[0:2], "little")
@@ -121,9 +106,12 @@ class EventData:
 
 T = TypeVar("T")
 EventTypeT = TypeVar("EventTypeT", bound="EventType")
+
+@dataclass
 class EventType(ABC, Generic[T]):
     response: T
-    item_code: int
+    item_code: ClassVar[int]
+    
     @classmethod
     @abstractmethod
     def from_bytes(cls, data: bytes) -> Self:
@@ -133,16 +121,14 @@ class EventType(ABC, Generic[T]):
 class Event:
     class LoginEvent(EventType[datetime]):
         item_code = 2
-        def __init__(self, timestamp: datetime):
-            self.response = timestamp
+        
         @classmethod
         def from_bytes(cls, data):
             unixtime = int.from_bytes(data[2:6], "little")
             return cls(datetime.fromtimestamp(unixtime))
     class HistoryEvent(EventType[Optional[EventData.HistoryData]]):
         item_code = 4
-        def __init__(self, history_data: Optional[EventData.HistoryData]):
-            self.response = history_data
+        
         @classmethod
         def from_bytes(cls, data):
             if data[2] == 0:
@@ -151,43 +137,42 @@ class Event:
                 return cls(None)
     class InitializeEvent(EventType[bytes]):
         item_code = 14
-        def __init__(self, random_data: bytes):
-            self.response = random_data
+        
         @classmethod
         def from_bytes(cls, data):
             return cls(data[2:6])
+
     class MechSettingsEvent(EventType[EventData.MechSettings]):
         item_code = 80
-        def __init__(self, mech_settings: EventData.MechSettings):
-            self.response = mech_settings
+        
         @classmethod
         def from_bytes(cls, data):
             return cls(EventData.MechSettings.from_bytes(data[2:]))
+
     class MechStatusEvent(EventType[EventData.MechStatus]):
         item_code = 81
-        def __init__(self, mech_status: EventData.MechStatus):
-            self.response = mech_status
+        
         @classmethod
         def from_bytes(cls, data):
             return cls(EventData.MechStatus.from_bytes(data[2:9]))
+
     class LockEvent(EventType[None]):
         item_code = 82
-        def __init__(self):
-            self.response = None
+        
         @classmethod
         def from_bytes(cls, data):
-            return cls()
+            return cls(None)
+
     class UnlockEvent(EventType[None]):
         item_code = 83
-        def __init__(self):
-            self.response = None
+        
         @classmethod
         def from_bytes(cls, data):
-            return cls()
+            return cls(None)
+
     class OpenSensorAutoLockTimeEvent(EventType[int]):
         item_code = 92
-        def __init__(self, auto_lock_time: int):
-            self.response = auto_lock_time
+
         @classmethod
         def from_bytes(cls, data):
             return cls(int.from_bytes(data[2:4], "little"))
