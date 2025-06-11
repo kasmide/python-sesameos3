@@ -243,7 +243,7 @@ class SesameClient:
         await asyncio.wait_for(self._send_and_wait(11, data, encrypted=True), timeout=5)
 
     async def set_mech_settings(self, lock: int, unlock: int):
-        payload = lock.to_bytes(2, 'little') + unlock.to_bytes(2, 'little')
+        payload = lock.to_bytes(2, 'little', signed=True) + unlock.to_bytes(2, 'little', signed=True)
         await asyncio.wait_for(self._send_and_wait(80, payload, encrypted=True), timeout=5)
 
     async def get_version(self) -> str:
