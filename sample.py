@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from aioconsole import ainput
-from sesameos3client import EventData, SesameClient, Event
+from sesameos3client import SesameClient, Event
 
 async def main():
     log_level = os.getenv('LOG_LEVEL', 'WARNING').upper()
@@ -19,6 +19,7 @@ async def main():
         SSM_ADDR = config["sesame_addr"]
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
+    client.on_disconnect(lambda: print(f"Disconnected from {SSM_ADDR}"))
     client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {e.response}"))
     client.add_listener(Event.MechSettingsEvent, lambda e, metadata: print(f"Mech settings received: {e.response}"))
     await client.connect()

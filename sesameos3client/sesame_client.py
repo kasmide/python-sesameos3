@@ -178,15 +178,14 @@ class SesameClient:
         self.mech_status = None
         self.mech_settings = None
         self.is_connected: bool = False
-        self._disconnect_callback: Optional[Callable[[], Union[Awaitable[None], None]]] = None
+        self._disconnect_callback: list[Callable[[], Union[Awaitable[None], None]]] = []
 
     def __del__(self):
         if self.is_connected:
             asyncio.run(self.disconnect())
     async def connect(self):
         waiter = self._wait_for_response(14)
-        await self.txrx.connect()
-        self.txrx.client.set_disconnected_callback(self._handle_disconnect)
+        await self.txrx.connect(disconnect_callback=self._handle_disconnect)
         self.is_connected = True
         initial, _ = await waiter
         await self._login(initial)
@@ -197,17 +196,17 @@ class SesameClient:
 
     def on_disconnect(self, callback: Callable[[], Union[Awaitable[None], None]]):
         """Register a callback for disconnection events."""
-        self._disconnect_callback = callback
+        self._disconnect_callback.append(callback)
 
     def _handle_disconnect(self, _client=None):
         if not self.is_connected:
             return
         self.is_connected = False
-        if self._disconnect_callback is not None:
-            if inspect.iscoroutinefunction(self._disconnect_callback):
-                asyncio.create_task(self._disconnect_callback())
+        for callback in self._disconnect_callback:
+            if inspect.iscoroutinefunction(callback):
+                asyncio.create_task(callback())
             else:
-                self._disconnect_callback()
+                callback()
 
     async def _login(self, data):
         cobj = CMAC.new(self.priv_key, ciphermod=AES)

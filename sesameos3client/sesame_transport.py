@@ -41,8 +41,8 @@ class SSMTransportHandler:
         self.ccm = None
         self.buffer = b''
         self.response_handler = response_handler
-    async def connect(self):
-        self.client = BleakClient(self.addr, timeout = 30)
+    async def connect(self, disconnect_callback=None):
+        self.client = BleakClient(self.addr, timeout = 30, disconnected_callback=disconnect_callback)
         await self.client.connect()
         logger.info(f"Connected to {self.addr}")
         await self.client.start_notify("16860003-a5ae-9856-b6d3-dbb4c676993e", self.notification_handler)
