@@ -5,7 +5,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, ClassVar, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
-from uuid import UUID
 from Crypto.Cipher import AES
 from Crypto.Hash import CMAC
 
@@ -96,12 +95,6 @@ class EventData:
             auto_lock_seconds = int.from_bytes(data[4:6], "little")
             logger.debug(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
             return cls(lock, unlock, auto_lock_seconds)
-
-        def to_bytes(self):
-            lock_bytes = self.lock.to_bytes(2, "little", signed=True)
-            unlock_bytes = self.unlock.to_bytes(2, "little", signed=True)
-            auto_lock_seconds_bytes = self.auto_lock_seconds.to_bytes(2, "little")
-            return lock_bytes + unlock_bytes + auto_lock_seconds_bytes
 
 
 T = TypeVar("T")
@@ -250,8 +243,9 @@ class SesameClient:
         data = seconds.to_bytes(2, "little")
         await asyncio.wait_for(self._send_and_wait(11, data, encrypted=True), timeout=5)
 
-    async def set_mech_settings(self, config: EventData.MechSettings):
-        await asyncio.wait_for(self._send_and_wait(80, config.to_bytes(), encrypted=True), timeout=5)
+    async def set_mech_settings(self, lock: int, unlock: int):
+        payload = lock.to_bytes(2, 'little') + unlock.to_bytes(2, 'little')
+        await asyncio.wait_for(self._send_and_wait(80, payload, encrypted=True), timeout=5)
 
     async def get_version(self) -> str:
         result, metadata = await asyncio.wait_for(self._send_and_wait(5, b'', encrypted=True), timeout=5)

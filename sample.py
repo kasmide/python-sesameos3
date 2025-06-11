@@ -19,7 +19,8 @@ async def main():
         SSM_ADDR = config["sesame_addr"]
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
-    client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {vars(e.response).items()}"))
+    client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {e.response}"))
+    client.add_listener(Event.MechSettingsEvent, lambda e, metadata: print(f"Mech settings received: {e.response}"))
     await client.connect()
     print(f"Connected to {SSM_ADDR}")
 
@@ -46,7 +47,7 @@ async def main():
                 print(f"id: {hist.response.id}, type: {hist.response.type}, time: {hist.response.timestamp}, ss5: {hist.response.ss5.hex()}")
             case "hist delete":
                 id = int(await ainput("id to delete? "))
-                await client._send_and_wait(18, id.to_bytes(4, 'little'), encrypted=True)
+                await client.delete_history(id)
             case "autolock":
                 duration = int(await ainput("duration in seconds? "))
                 await client.set_autolock_time(duration)
@@ -59,12 +60,7 @@ async def main():
                 print(f"Lock: {settings.lock}, Unlock: {settings.unlock}, Auto Lock Seconds: {settings.auto_lock_seconds}")
                 lock = int(await ainput("Lock pos? "))
                 unlock = int(await ainput("Unlock pos? "))
-                auto_lock_seconds = int(await ainput("Auto lock seconds? "))
-                await client.set_mech_settings(EventData.MechSettings(
-                    lock=lock,
-                    unlock=unlock,
-                    auto_lock_seconds=auto_lock_seconds
-                ))
+                await client.set_mech_settings(lock, unlock)
 
             case "q":
                 await client.txrx.disconnect()
