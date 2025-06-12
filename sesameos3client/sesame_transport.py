@@ -36,13 +36,14 @@ class CCMAgent:
 class SSMTransportHandler:
     addr: str
     ccm: Optional[CCMAgent]
-    def __init__(self, addr, response_handler):
+    def __init__(self, addr, response_handler, disconnect_handler=None):
         self.addr = addr
         self.ccm = None
         self.buffer = b''
         self.response_handler = response_handler
-    async def connect(self, disconnect_callback=None):
-        self.client = BleakClient(self.addr, timeout = 30, disconnected_callback=disconnect_callback)
+        self.disconnect_handler = disconnect_handler
+    async def connect(self):
+        self.client = BleakClient(self.addr, timeout = 30, disconnected_callback=self._on_disconnect)
         await self.client.connect()
         logger.info(f"Connected to {self.addr}")
         await self.client.start_notify("16860003-a5ae-9856-b6d3-dbb4c676993e", self.notification_handler)
@@ -53,6 +54,12 @@ class SSMTransportHandler:
             logger.info(f"Disconnected from {self.addr}")
         else:
             logger.warning("Client is not connected")
+
+    def _on_disconnect(self, client):
+        self.ccm = None
+        self.buffer = b''
+        if self.disconnect_handler is not None:
+            self.disconnect_handler()
 
     async def send(self, data: bytes, encrypted: bool):
         if encrypted:

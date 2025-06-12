@@ -172,7 +172,7 @@ class Event:
 
 class SesameClient:
     def __init__(self, sesame_addr, priv_key):
-        self.txrx = SSMTransportHandler(sesame_addr, self._response_handler)
+        self.txrx = SSMTransportHandler(sesame_addr, self._response_handler, self._handle_disconnect)
         self.response_listener: dict = {}
         self.priv_key = priv_key
         self.mech_status = None
@@ -185,7 +185,7 @@ class SesameClient:
             asyncio.run(self.disconnect())
     async def connect(self):
         waiter = self._wait_for_response(14)
-        await self.txrx.connect(disconnect_callback=self._handle_disconnect)
+        await self.txrx.connect()
         self.is_connected = True
         initial, _ = await waiter
         await self._login(initial)
