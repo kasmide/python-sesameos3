@@ -19,11 +19,11 @@ async def main():
         SSM_ADDR = config["sesame_addr"]
         PRIV_KEY = base64.b64decode(config["sesame_key"])
     client = SesameClient(SSM_ADDR, PRIV_KEY)
-    client.on_disconnect(lambda: print(f"Disconnected from {SSM_ADDR}"))
+    client.on_connected(lambda: print(f"Connected to {SSM_ADDR}"))
+    client.on_disconnected(lambda: print(f"Disconnected from {SSM_ADDR}"))
     client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {e.response}"))
     client.add_listener(Event.MechSettingsEvent, lambda e, metadata: print(f"Mech settings received: {e.response}"))
     await client.connect()
-    print(f"Connected to {SSM_ADDR}")
 
     while True:
         match (await ainput("command? ")).strip().lower():
@@ -62,7 +62,10 @@ async def main():
                 lock = int(await ainput("Lock pos? "))
                 unlock = int(await ainput("Unlock pos? "))
                 await client.set_mech_settings(lock, unlock)
-
+            case "disconnect":
+                await client.disconnect()
+            case "connect":
+                await client.connect()
             case "q":
                 await client.txrx.disconnect()
                 break
