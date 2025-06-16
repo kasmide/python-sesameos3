@@ -17,8 +17,8 @@ async def main():
     with open("config.json", "r") as f:
         config = json.load(f)
         SSM_ADDR = config["sesame_addr"]
-        PRIV_KEY = base64.b64decode(config["sesame_key"])
-    client = SesameClient(SSM_ADDR, PRIV_KEY)
+        DEVICE_SECRET = base64.b64decode(config["sesame_key"])
+    client = SesameClient(SSM_ADDR, DEVICE_SECRET)
     client.on_connected(lambda: print(f"Connected to {SSM_ADDR}"))
     client.on_disconnected(lambda: print(f"Disconnected from {SSM_ADDR}"))
     client.add_listener(Event.MechStatusEvent, lambda e, metadata: print(f"Mech status received: {e.response}"))

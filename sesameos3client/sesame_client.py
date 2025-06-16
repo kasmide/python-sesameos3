@@ -171,10 +171,10 @@ class Event:
             return cls(int.from_bytes(data[2:4], "little"))
 
 class SesameClient:
-    def __init__(self, sesame_addr, priv_key):
+    def __init__(self, sesame_addr, device_secret):
         self.txrx = SSMTransportHandler(sesame_addr, self._response_handler, self._handle_disconnect)
         self.response_listener: dict = {}
-        self.priv_key = priv_key
+        self.device_secret = device_secret
         self.mech_status = None
         self.mech_settings = None
         self.is_connected: bool = False
@@ -218,7 +218,7 @@ class SesameClient:
                 callback()
 
     async def _login(self, data):
-        cobj = CMAC.new(self.priv_key, ciphermod=AES)
+        cobj = CMAC.new(self.device_secret, ciphermod=AES)
         cobj.update(data[2:])
         cmac_result = cobj.digest()
         token = cmac_result[:16]
