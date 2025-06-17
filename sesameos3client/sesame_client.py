@@ -98,7 +98,6 @@ class EventData:
 
 
 T = TypeVar("T")
-EventTypeT = TypeVar("EventTypeT", bound="EventType")
 
 @dataclass
 class EventType(ABC, Generic[T]):
@@ -225,7 +224,7 @@ class SesameClient:
         self.txrx.ccm = CCMAgent(data[2:6], token=token)
         await self._send_and_wait(2, token[:4], encrypted=False)
 
-    async def wait_for(self, event_type: Type[EventTypeT], timeout: int = 5) -> EventTypeT:
+    async def wait_for(self, event_type: Type[EventType[T]], timeout: int = 5) -> EventType[T]:
         item_code = event_type.item_code
         waiter = self._wait_for_response(item_code)
         result = await asyncio.wait_for(waiter, timeout)
@@ -274,10 +273,10 @@ class SesameClient:
             raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
         logger.info(f"History with ID {history_id} deleted successfully.")
 
-    def add_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
+    def add_listener(self, event_type: Type[EventType[T]], callback: Union[Callable[[EventType[T], dict], None], Callable[[EventType[T], dict], Awaitable[None]]]):
         self._add_listener(event_type.item_code, callback, deserialize=event_type)
 
-    def remove_listener(self, event_type: Type[EventTypeT], callback: Union[Callable[[EventTypeT, dict], None], Callable[[EventTypeT, dict], Awaitable[None]]]):
+    def remove_listener(self, event_type: Type[EventType[T]], callback: Union[Callable[[EventType[T], dict], None], Callable[[EventType[T], dict], Awaitable[None]]]):
         self._remove_listener(event_type.item_code, callback)
 
     async def _send(self, item_code, payload, encrypted: bool):
