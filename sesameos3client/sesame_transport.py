@@ -2,6 +2,7 @@ from typing import Optional
 from Crypto.Cipher import AES
 from bleak import BleakClient
 import logging
+import struct
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +14,7 @@ class CCMAgent:
         self.send_count = 0
         self.nouse = 0
     def create_iv(self, count):
-        count_bytes = count.to_bytes(8, 'little')
-        nouse_bytes = self.nouse.to_bytes(1, 'little')
-        return count_bytes + nouse_bytes + self.random_code
+        return struct.pack('<QB', count, self.nouse) + self.random_code
     def encrypt(self, data, tag_length=4):
         iv = self.create_iv(self.send_count)
         self.send_count += 1
@@ -77,7 +76,7 @@ class SSMTransportHandler:
                     parsing_type = 1
             SEG = parsing_type << 1
             SEG += 1 if i == 0 else 0
-            await self.gatt_write(SEG.to_bytes(1) + chunk)
+            await self.gatt_write(struct.pack('<B', SEG) + chunk)
 
     async def gatt_write(self, data):
         logger.debug(f"Writing data: {data.hex()}")

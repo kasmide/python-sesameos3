@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import asyncio
 import inspect
 import logging
+import struct
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, ClassVar, Generic, Optional, Self, Type, TypeVar, Union, Awaitable
@@ -42,9 +43,8 @@ class EventData:
         
         @classmethod
         def from_bytes(cls, data: bytes):
-            id = int.from_bytes(data[1:5], "little")
-            type = data[5]
-            timestamp = datetime.fromtimestamp(int.from_bytes(data[6:10], "little"))
+            id, type, timestamp_int = struct.unpack('<xIBI', data[1:10])
+            timestamp = datetime.fromtimestamp(timestamp_int)
             mechstatus = EventData.MechStatus.from_bytes(data[10:17])
             ss5 = data[17:]
             return cls(id, type, timestamp, mechstatus, ss5)
@@ -63,18 +63,14 @@ class EventData:
         
         @classmethod
         def from_bytes(cls, data: bytes):
-            battery = int.from_bytes(data[0:2], "little")
-            target = int.from_bytes(data[2:4], "little")
-            target = target if target < 2 ** 15 else target - 2 ** 16
-            position = int.from_bytes(data[4:6], "little")
-            position = position if position < 2 ** 15 else position - 2 ** 16
-            is_clutch_failed = (data[6] >> 0) & 1 == 1
-            is_lock_range = (data[6] >> 1) & 1 == 1
-            is_unlock_range = (data[6] >> 2) & 1 == 1
-            is_critical = (data[6] >> 3) & 1 == 1
-            is_stop = (data[6] >> 4) & 1 == 1
-            is_low_battery = (data[6] >> 5) & 1 == 1
-            is_clockwise = (data[6] >> 6) & 1 == 1
+            battery, target, position, flags = struct.unpack('<HhhB', data[0:7])
+            is_clutch_failed = (flags >> 0) & 1 == 1
+            is_lock_range = (flags >> 1) & 1 == 1
+            is_unlock_range = (flags >> 2) & 1 == 1
+            is_critical = (flags >> 3) & 1 == 1
+            is_stop = (flags >> 4) & 1 == 1
+            is_low_battery = (flags >> 5) & 1 == 1
+            is_clockwise = (flags >> 6) & 1 == 1
             logger.debug(f"Battery: {battery}, Target: {target}, Position: {position}, is_clutch_failed: {is_clutch_failed}, "
                   f"is_lock_range: {is_lock_range}, is_unlock_range: {is_unlock_range}, is_critical: {is_critical}, "
                   f"is_stop: {is_stop}, is_low_battery: {is_low_battery}, is_clockwise: {is_clockwise}")
@@ -88,11 +84,7 @@ class EventData:
         
         @classmethod
         def from_bytes(cls, data: bytes):
-            lock = int.from_bytes(data[0:2], "little")
-            lock = lock if lock < 2 ** 15 else lock - 2 ** 16
-            unlock = int.from_bytes(data[2:4], "little")
-            unlock = unlock if unlock < 2 ** 15 else unlock - 2 ** 16
-            auto_lock_seconds = int.from_bytes(data[4:6], "little")
+            lock, unlock, auto_lock_seconds = struct.unpack('<hhH', data[0:6])
             logger.debug(f"Lock: {lock}, Unlock: {unlock}, Auto Lock Seconds: {auto_lock_seconds}")
             return cls(lock, unlock, auto_lock_seconds)
 
@@ -116,7 +108,7 @@ class Event:
         
         @classmethod
         def from_bytes(cls, data):
-            unixtime = int.from_bytes(data[2:6], "little")
+            unixtime = struct.unpack('<xxI', data[2:6])[0]
             return cls(datetime.fromtimestamp(unixtime))
     class HistoryEvent(EventType[Optional[EventData.HistoryData]]):
         item_code = 4
@@ -167,7 +159,7 @@ class Event:
 
         @classmethod
         def from_bytes(cls, data):
-            return cls(int.from_bytes(data[2:4], "little"))
+            return cls(struct.unpack('<xxH', data[2:4])[0])
 
 class SesameClient:
     def __init__(self, sesame_addr, device_secret):
@@ -232,26 +224,26 @@ class SesameClient:
 
     async def lock(self, display_name: str):
         display_name_bytes = display_name.encode('utf-8')[:32]
-        display_name_len = len(display_name_bytes).to_bytes(1, "little")
+        payload = struct.pack('<B', len(display_name_bytes)) + display_name_bytes
         try:
-            await asyncio.wait_for(self._send_and_wait(82, display_name_len + display_name_bytes, encrypted=True), timeout=5)
+            await asyncio.wait_for(self._send_and_wait(82, payload, encrypted=True), timeout=5)
         except asyncio.TimeoutError:
             raise TimeoutError("Lock command timed out.")
 
     async def unlock(self, display_name: str):
         display_name_bytes = display_name.encode('utf-8')[:32]
-        display_name_len = len(display_name_bytes).to_bytes(1, "little")
+        payload = struct.pack('<B', len(display_name_bytes)) + display_name_bytes
         try:
-            await asyncio.wait_for(self._send_and_wait(83, display_name_len + display_name_bytes, encrypted=True), timeout=5)
+            await asyncio.wait_for(self._send_and_wait(83, payload, encrypted=True), timeout=5)
         except asyncio.TimeoutError:
             raise TimeoutError("Unlock command timed out.")
 
     async def set_autolock_time(self, seconds: int):
-        data = seconds.to_bytes(2, "little")
+        data = struct.pack('<H', seconds)
         await asyncio.wait_for(self._send_and_wait(11, data, encrypted=True), timeout=5)
 
     async def set_mech_settings(self, lock: int, unlock: int):
-        payload = lock.to_bytes(2, 'little', signed=True) + unlock.to_bytes(2, 'little', signed=True)
+        payload = struct.pack('<hh', lock, unlock)
         await asyncio.wait_for(self._send_and_wait(80, payload, encrypted=True), timeout=5)
 
     async def get_version(self) -> str:
@@ -267,7 +259,7 @@ class SesameClient:
         return Event.HistoryEvent.from_bytes(result)
 
     async def delete_history(self, history_id: int):
-        data = history_id.to_bytes(4, 'little')
+        data = struct.pack('<I', history_id)
         result, metadata = await asyncio.wait_for(self._send_and_wait(18, data, encrypted=True, response_code=18), timeout=5)
         if result[2] != 0:
             raise ValueError(f"Failed to delete history with ID {history_id}, response code: {result[2]}")
@@ -280,7 +272,7 @@ class SesameClient:
         self._remove_listener(event_type.item_code, callback)
 
     async def _send(self, item_code, payload, encrypted: bool):
-        data = item_code.to_bytes(1) + payload
+        data = struct.pack('<B', item_code) + payload
         await self.txrx.send(data, encrypted=encrypted)
 
     async def _send_and_wait(self, item_code, data, encrypted: bool, response_code: Optional[int] = None):
@@ -330,8 +322,8 @@ class SesameClient:
         match data[1]:
             case 2:
                 logger.debug("login response")
-                timestamp = data[3:7]
-                logger.debug(f"Timestamp: {int.from_bytes(timestamp, 'little')}")
+                timestamp = struct.unpack('<I', data[3:7])[0]
+                logger.debug(f"Timestamp: {timestamp}")
             case 4:
                 logger.debug("history response")
                 if data[2] == 0:
@@ -369,7 +361,7 @@ class SesameClient:
                     logger.warning(f"Unknown response: {data[2]}")
             case 92:
                 logger.debug("OpenSensor autolock time")
-                time = int.from_bytes(data[2:4], "little")
+                time = struct.unpack('<H', data[2:4])[0]
                 logger.debug(f"Auto lock time: {time}")
             case _:
                 logger.warning(f"Unhandled response item code: {data[1]}")
