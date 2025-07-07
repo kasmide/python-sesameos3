@@ -43,7 +43,7 @@ class EventData:
         
         @classmethod
         def from_bytes(cls, data: bytes):
-            id, type, timestamp_int = struct.unpack('<xIBI', data[1:10])
+            id, type, timestamp_int = struct.unpack('<xIBI', data[0:10])
             timestamp = datetime.fromtimestamp(timestamp_int)
             mechstatus = EventData.MechStatus.from_bytes(data[10:17])
             ss5 = data[17:]
